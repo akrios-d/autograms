@@ -392,8 +392,6 @@ class Autogram():
         memory_object.set_test_mode(self.test_mode)
 
         with self.use_memory(memory_object):
-     
-
             result = self.root_function(**kwargs)
     
         return result.data['reply'], result.memory

@@ -1,15 +1,7 @@
 import json
 from autograms import Autogram, AutogramConfig, use_config, load_autogram
-
-
-import pandas as pd
 import argparse
 import os
-
-
-
-
-
 
 def main():
     # Set up argument parsing for command-line arguments
@@ -68,6 +60,8 @@ def main():
             from examples.general_tutor import chatbot
         elif args.example_name == "recruiter":
             from examples.recruiter import chatbot
+        elif args.example_name == "rag":
+            from examples.rag import chatbot
         else:
             # Raise an error if no valid example is provided
             # can alternatively replace this raise statement with your own import statement to set chatbot function
@@ -123,8 +117,6 @@ def main():
 
         # Serialize memory before the next reply to preserve the state
         memory_str_orig = autogram.serialize(memory_object)
-
-
 
         # Generate the next reply based on user input
         chat_reply, memory_object = autogram.reply(user_reply, memory_object=memory_object)
