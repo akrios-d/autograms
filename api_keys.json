@@ -1,4 +1,2 @@
 {"load_from_env": true,"openai":"OPENAI_API_KEY"}
-{"load_from_env": true,"searchapi":"SEARCHAPI_API_KEY"}
-{"load_from_env": true,"confluenceapi":"CONFLUENCE_API_URL"}
-{"load_from_env": true,"confluenceapi":"CONFLUENCE_API_URL"}
+
