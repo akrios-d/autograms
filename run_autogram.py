@@ -30,7 +30,7 @@ def main():
 
     # Load or initialize configuration
     if args.config_file is None:
-        if args.example_name == "autograms_seed_agent":
+        if args.example_name == "autograms_seed_agent" or args.example_name == "doc_search":
             chatbot_generation_args={"temperature":0.4}
             autogram_config = AutogramConfig(chatbot_path = args.model_name,chatbot_max_input_len=40000,classifier_max_input_len=40000,classifier_path = args.model_name,max_response_len=4096,chatbot_generation_args=chatbot_generation_args,exclude_classifier_system_prompt=True,chatbot_type = args.model_type,chatbot_proxy_port=args.proxy_port,embedding_proxy_port = args.embedding_proxy_port,embedding_type=args.embedding_model_type,embedding_path=args.embedding_model_name,reply_start_type='none')
         else:
@@ -60,8 +60,12 @@ def main():
             from examples.general_tutor import chatbot
         elif args.example_name == "recruiter":
             from examples.recruiter import chatbot
+        elif args.example_name == "search":
+            from examples.autograms_searchapi import chatbot
         elif args.example_name == "rag":
-            from examples.rag import chatbot
+            from examples.rag import chatbot, init_chatbot
+            with use_config(autogram_config):
+                init_chatbot()  
         else:
             # Raise an error if no valid example is provided
             # can alternatively replace this raise statement with your own import statement to set chatbot function

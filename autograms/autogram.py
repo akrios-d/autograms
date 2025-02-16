@@ -15,7 +15,7 @@ import importlib
 
 
 DEFAULT_API_KEYS={"load_from_env": True,"openai":"OPENAI_API_KEY"}
-
+DEFAULT_API_KEYS={"load_from_env": True,"searchapi":"SEARCHAPI_API_KEY"}
 
 
 
@@ -96,7 +96,6 @@ def use_config(config=None,test_mode=False,supervisor_mode=False):
 
     memory_object.set_test_mode(test_mode=test_mode)
     memory_object.set_supervisor_mode(supervisor_mode=supervisor_mode)
-
 
     try:
         yield memory_object
