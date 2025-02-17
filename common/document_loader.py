@@ -5,22 +5,20 @@ import logging
 from langchain.schema import Document
 from langchain_community.document_loaders import TextLoader, UnstructuredHTMLLoader, UnstructuredPDFLoader
 import requests
-from common.config import CONFLUENCE_API_URL, CONFLUENCE_API_KEY, CONFLUENCE_API_USER, MANTIS_API_URL, MANTIS_API_KEY, SESSION_FILE, DATA_DIR
+from common.config import CONFLUENCE_API_URL, CONFLUENCE_API_KEY, CONFLUENCE_API_USER, MANTIS_API_URL, MANTIS_API_KEY
 
 logger = logging.getLogger(__name__)
 
-def load_documents(from_confluence=False, from_mantis=False, use_history=False):
+def load_documents(from_confluence=False, from_mantis=False):
     documents = []
 
-    documents.extend(load_local_files())
+    documents.extend(load_local_files(ext_list=['*.txt']))
 
     if from_confluence:
         documents.extend(fetch_confluence_pages())
     if from_mantis:
         documents.extend(fetch_mantis_issues())
-    if use_history:
-        documents.extend(use_history())
-    
+
     return documents
 
 def fetch_confluence_pages():
@@ -90,31 +88,30 @@ def fetch_mantis_issues():
         logger.error(f"Error fetching Mantis issues. Status: {response.status_code}")
     return documents
 
-def load_chat_history():
-    documents = []
-     # Load chat history
-    if os.path.exists(SESSION_FILE):
-        with open(SESSION_FILE, 'r') as f:
-            chat_history = json.load(f)
-        for chat in chat_history:
-            documents.append(Document(page_content=chat["response"], metadata={"source": "ChatHistory"}))
-    return documents
-
-def load_local_files():
+# --------------------
+# Helper functions for reading docs
+# --------------------
+def load_local_files(docs_folder="docs",ext_list=['*.pdf', '*.txt', '*.html']):
     documents = []
     # Load local files
-    for ext in ['*.pdf', '*.txt', '*.html']:
-        for file_path in glob.glob(os.path.join(DATA_DIR, ext)):
+    for root, _, files in os.walk(docs_folder):
+        for file_name in files:
+            path = os.path.join(root, file_name)
             try:
-                if file_path.endswith('.pdf'):
-                    loader = UnstructuredPDFLoader(file_path)
-                elif file_path.endswith('.txt'):
-                    loader = TextLoader(file_path, encoding = 'UTF-8')
-                elif file_path.endswith('.html'):
-                    loader = UnstructuredHTMLLoader(file_path)
+                if file_name.endswith('.pdf'):
+                    loader = UnstructuredPDFLoader(path)
+                elif file_name.endswith('.txt'):
+                    print(file_name)
+                    loader = TextLoader(path, encoding = 'UTF-8')
+                elif file_name.endswith('.html'):
+                    loader = UnstructuredHTMLLoader(path)
                 else:
                     continue
-                documents.extend(loader.load())
+                
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = loader.load()
+                    documents.append({"text":content,"metadata":{"file_name":path}})
             except Exception as e:
-                logger.error(f"Error loading file {file_path}: {e}")
+                logger.error(f"Error loading file {path}: {e}")
+           
     return documents

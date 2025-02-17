@@ -14,7 +14,6 @@ import os
 from typing import List
 from autograms.agent_modules.vector_stores import AutoIndex
 from common.document_loader import load_documents
-from autograms_doc_search import chunk_document
 
 # AutoGRAMS imports
 from autograms import autograms_function
@@ -35,6 +34,172 @@ from autograms.functional import (
 from autograms.nodes import location
 from autograms.memory import init_user_globals
 
+def chunk_document(text, file_path):
+    """
+    Chunk a single document based on:
+      1) Markdown section headings (starting with DOC_HEADING_TOKEN),
+      2) If a chunk is still too large or there's no headings, chunk by newline,
+      3) Fallback: chunk raw size.
+    
+    We produce a list of chunk dicts with:
+        {
+          'text': chunk_text,
+          'metadata': file_path
+        }
+    """
+    # If the text is short, just return as a single chunk
+    if len(text) <= MAX_CHUNK_CHARS:
+        return [{"text": text, "metadata": file_path}]
+
+    # 1) Attempt chunk_by_sections if we have markdown headings
+    if DOC_HEADING_TOKEN in text:
+        sections = chunk_by_sections(text)
+        final_chunks = []
+        for sec in sections:
+            if len(sec) <= MAX_CHUNK_CHARS:
+                # This entire section fits in one chunk
+                final_chunks.append(sec)
+            else:
+                # This section alone is bigger than MAX_CHUNK_CHARS => 
+                # we revert to chunk_by_newline for this section
+                # chunk_by_newline returns a list of smaller chunks
+                newline_chunks = chunk_by_newline(sec)
+                final_chunks.extend(newline_chunks)
+        # now we have final_chunks as a list of strings,
+        # but we still need to respect the MAX_CHUNK_CHARS
+        # We'll group them into final segments
+        grouped_sections = group_chunks(final_chunks, MAX_CHUNK_CHARS)
+        return [{"text": chunk, "metadata": file_path} for chunk in grouped_sections]
+
+    # 2) If no headings or doesn't appear to be Markdown, 
+    #    let's chunk by newline
+    #    (This step also covers extremely large plain text).
+    newline_chunks = chunk_by_newline(text)
+    # Some of them might be bigger than max chunk size, so group them
+    # or raw-chunk them if needed
+    grouped_sections = []
+    for chunk in newline_chunks:
+        if len(chunk) <= MAX_CHUNK_CHARS:
+            grouped_sections.append(chunk)
+        else:
+            # Fallback to chunk_raw for this piece
+            raw_chunks = chunk_raw(chunk, MAX_CHUNK_CHARS, CHUNK_OVERLAP_RAW)
+            grouped_sections.extend(raw_chunks)
+
+    # If everything is smaller, we still want to group consecutive chunks 
+    # until we approach MAX_CHUNK_CHARS
+    final_groups = group_chunks(grouped_sections, MAX_CHUNK_CHARS)
+    return [{"text": c, "metadata": file_path} for c in final_groups]
+
+
+def chunk_by_sections(text: str) -> List[str]:
+    """
+    Split text by '###' headings into sections. 
+    Return a list of section strings (with headings included).
+    Each heading + content up to the next heading is a "section".
+    """
+    # If there's no heading token, just return entire text as single section
+    if DOC_HEADING_TOKEN not in text:
+        return [text]
+
+    # We'll split on the heading token, but we want to keep the heading 
+    # with the associated chunk. 
+    # Trick: re-insert the heading token at the start of each chunk.
+    parts = text.split(DOC_HEADING_TOKEN)
+    # The first part might not have a heading 
+    # (text before the first heading). We'll treat that as well.
+    sections = []
+    for idx, part in enumerate(parts):
+        if idx == 0:
+            # text before the first heading
+            if part.strip():
+                sections.append(part.strip())
+        else:
+            # re-add the heading token
+            chunk_text = DOC_HEADING_TOKEN + part
+            sections.append(chunk_text.strip())
+
+    return sections
+
+
+def chunk_by_newline(text: str) -> List[str]:
+    """
+    Split text by newline markers. 
+    Return a list of chunks (strings), each chunk is one paragraph block 
+    (defined by a blank line or single line).
+    For continuous lines, we combine them into a single chunk if possible, 
+    but do not exceed MAX_CHUNK_CHARS. 
+    (But if a single line is bigger than max chunk size, 
+     we'll fallback in the caller to chunk_raw).
+    """
+    lines = text.splitlines(keepends=True)  # keep newlines to preserve formatting
+    chunks = []
+    current_chunk = []
+
+    for line in lines:
+        # If we add line to current_chunk, how big would it be?
+        prospective_size = sum(len(ln) for ln in current_chunk) + len(line)
+        if prospective_size > MAX_CHUNK_CHARS:
+            # we flush the current_chunk
+            if current_chunk:
+                chunks.append("".join(current_chunk))
+                current_chunk = []
+        current_chunk.append(line)
+
+    if current_chunk:
+        chunks.append("".join(current_chunk))
+    return chunks
+
+
+def chunk_raw(text: str, max_chars: int, overlap: int) -> List[str]:
+    """
+    Raw chunking: we break the text every `max_chars` characters, 
+    overlapping by `overlap` characters. 
+    This is the last resort if no better splitting strategies apply.
+    """
+    result = []
+    start = 0
+    while start < len(text):
+        end = min(start + max_chars, len(text))
+        chunk = text[start:end]
+        result.append(chunk)
+        # move forward with overlap
+        start = end - overlap  # negative overlap => re-process some text
+        if start < 0:
+            start = 0
+        if start >= len(text):
+            break
+        if start == end:
+            # no progress possible -> break
+            break
+    return result
+
+
+def group_chunks(section_list: List[str], max_size: int) -> List[str]:
+    """
+    We have a list of strings (section_list). We'll combine consecutive 
+    sections if possible without exceeding max_size. If adding another 
+    section would exceed max_size, we start a new chunk.
+    This results in bigger but fewer chunks for improved context usage.
+    """
+    grouped = []
+    current = []
+    current_len = 0
+
+    for sec in section_list:
+        if current_len + len(sec) <= max_size:
+            current.append(sec)
+            current_len += len(sec)
+        else:
+            if current:
+                grouped.append("".join(current))
+            # start new chunk with sec
+            current = [sec]
+            current_len = len(sec)
+
+    if current:
+        grouped.append("".join(current))
+    return grouped
 
 # --------------------
 # Global constants and variables
@@ -103,7 +268,7 @@ def chatbot():
     )
 
     # Greet the user and enter a loop where we continuously get user input & respond
-    reply("Hello! I can answer your questions about autograms. what would you like to know?")
+    reply("Hello! I can answer your questions about documents. what would you like to know?")
     doc_info=None
 
     while True:
